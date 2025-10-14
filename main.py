@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
+import os
+import uvicorn
 
 app = FastAPI()
 
@@ -42,7 +44,7 @@ def predict(local: str, visitante: str, linea: float):
 
         # Calcular confianza (0 a 100%)
         diferencia = abs(total_estimado - linea)
-        confianza = min(100, round(diferencia * 10))  # Ajusta escala si quieres
+        confianza = min(100, round(diferencia * 10))
 
         return {
             "equipo_local": local,
@@ -55,3 +57,8 @@ def predict(local: str, visitante: str, linea: float):
 
     except Exception as e:
         return {"error": str(e)}
+
+# Ejecutar con el puerto que Render asigna
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))  # Render asigna el puerto en la variable PORT
+    uvicorn.run(app, host="0.0.0.0", port=port)
