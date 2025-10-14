@@ -1,12 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
-import os
-import uvicorn
+from statline_overunder import StatLineAI
 
 app = FastAPI()
 
-# Permitir acceso desde Flutter
+# Permitir acceso desde cualquier origen (Flutter)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,12 +14,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Cargar Excel al iniciar la app
+# Cargar Excel al iniciar la app y crear instancia de StatLineAI
 @app.on_event("startup")
 def load_data():
     print("Cargando Excel en memoria...")
     df = pd.read_excel("NFL_Puntos_2025.xlsx")
-    app.state.df = df
+    app.state.ai = StatLineAI(df)
     print(f"Excel cargado. Filas: {len(df)}")
 
 @app.get("/")
@@ -29,36 +28,19 @@ def inicio():
 
 @app.get("/predict")
 def predict(local: str, visitante: str, linea: float):
-    df = app.state.df
-    try:
-        # Obtener estadísticas de cada equipo
-        local_stats = df[df['team'] == local].mean(numeric_only=True)
-        visitante_stats = df[df['team'] == visitante].mean(numeric_only=True)
+    ai: StatLineAI = app.state.ai
+    res = ai.predict(local, visitante, linea)
 
-        # Calcular total estimado
-        total_estimado = float(local_stats.get('points_per_game', 0) +
-                               visitante_stats.get('points_per_game', 0))
+    # Si hubo error, se devuelve en formato que Flutter espera
+    if res.get("status") == "error":
+        return {"error": res["mensaje"]}
 
-        # Determinar OVER/UNDER
-        resultado = "OVER" if total_estimado > linea else "UNDER"
-
-        # Calcular confianza (0 a 100%)
-        diferencia = abs(total_estimado - linea)
-        confianza = min(100, round(diferencia * 10))
-
-        return {
-            "equipo_local": local,
-            "equipo_visitante": visitante,
-            "total_estimado": round(total_estimado, 1),
-            "linea": linea,
-            "resultado": resultado,
-            "confianza": confianza
-        }
-
-    except Exception as e:
-        return {"error": str(e)}
-
-# Ejecutar con el puerto que Render asigna
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))  # Render asigna el puerto en la variable PORT
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Respuesta normal
+    return {
+        "equipo_local": res["equipo_local"],
+        "equipo_visitante": res["equipo_visitante"],
+        "total_estimado": res["total_estimado"],
+        "linea": res["linea"],
+        "resultado": res["resultado"],
+        "confianza": res["confianza"]
+    }
